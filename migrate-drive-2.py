@@ -38,7 +38,7 @@ def main():
     creds = authenticate(args.credentials_path)
     service = build('drive', 'v3', credentials=creds)
     files = service.files()
-    perms = service.permissions()
+    parents_cache = FileCache(files)
 
     LOGGER.debug('Searching for files owned by {} ...'.format(args.email))
     file_request = files.list(
@@ -48,6 +48,8 @@ def main():
         LOGGER.info(f['name'])
         if f['mimeType'] == 'application/vnd.google-apps.folder':
             LOGGER.warning('Skipping folder owned by {}'.format(args.email))
+        elif not any(parents_cache.is_owned(parent_id) for parent_id in f['parents']):
+            LOGGER.warning('Skipping file not in any owned parent folders')
         else:
             copy_response = files.copy(
                 fileId=f['id'], enforceSingleParent=True,
