@@ -64,3 +64,21 @@ def configure_logging(log_path):
     LOGGER.setLevel(logging.DEBUG)
     add_handler(LOGGER, logging.StreamHandler(), level=logging.INFO)
     add_handler(LOGGER, logging.FileHandler(log_path, encoding='utf-8'), level=logging.DEBUG)
+
+
+class FileCache(object):
+    def __init__(self, files):
+        self.files = files
+        self.file_id_map = {}
+
+    def get(self, file_id):
+        if file_id not in self.file_id_map:
+            file_response = self.files.get(fileId=file_id, fields="owners").execute()
+            self.file_id_map[file_id] = {
+                'owned': any(owner['me'] for owner in file_response['owners']),
+            }
+
+        return self.file_id_map[file_id]
+
+    def is_owned(self, file_id):
+        return self.get(file_id)['owned']

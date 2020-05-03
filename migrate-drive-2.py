@@ -1,29 +1,10 @@
 #!/usr/bin/env python3
 
+import os
+
 from googleapiclient.discovery import build
-from googleapiclient.errors import HttpError
 
-from migrate_google import LOGGER, authenticate, service_method_iter, configure_logging
-
-LOG_PATH = 'migrate-drive-2.log'
-
-
-class FileCache(object):
-    def __init__(self, files):
-        self.files = files
-        self.file_id_map = {}
-
-    def get(self, file_id):
-        if file_id not in self.file_id_map:
-            file_response = self.files.get(fileId=file_id, fields="owners").execute()
-            self.file_id_map[file_id] = {
-                'owned': any(owner['me'] for owner in file_response['owners']),
-            }
-
-        return self.file_id_map[file_id]
-
-    def is_owned(self, file_id):
-        return self.get(file_id)['owned']
+from migrate_google import LOGGER, authenticate, service_method_iter, configure_logging, FileCache
 
 
 def main():
@@ -33,23 +14,23 @@ def main():
     parser.add_argument('email', help='Email address whose shared files will be copied')
     args = parser.parse_args()
 
-    configure_logging(LOG_PATH)
+    credentials_name = os.path.splitext(os.path.basename(args.credentials_path))[0]
+    configure_logging('migrate-drive-2-{}.log'.format(credentials_name))
 
-    creds = authenticate(args.credentials_path)
+    creds = authenticate(args.credentials_path, token_path=credentials_name + '.pickle')
     service = build('drive', 'v3', credentials=creds)
     files = service.files()
     parents_cache = FileCache(files)
 
     LOGGER.debug('Searching for files owned by {} ...'.format(args.email))
     file_request = files.list(
-        q="'{}' in owners".format(args.email), pageSize=100,
-        fields="nextPageToken, files(id, name, description, starred, owners, mimeType, parents)")
+        q="'{}' in owners and not mimeType contains 'application/vnd.google-apps'".format(args.email),
+        pageSize=100,
+        fields="nextPageToken, files(id, name, description, starred, owners, parents)")
     for f in service_method_iter(file_request, 'files', files.list_next):
         LOGGER.info(f['name'])
-        if f['mimeType'] == 'application/vnd.google-apps.folder':
-            LOGGER.warning('Skipping folder owned by {}'.format(args.email))
-        elif not any(parents_cache.is_owned(parent_id) for parent_id in f['parents']):
-            LOGGER.warning('Skipping file not in any owned parent folders')
+        if not all(parents_cache.is_owned(parent_id) for parent_id in f['parents']):
+            LOGGER.warning('Skipping file in folder owned by someone else')
         else:
             copy_response = files.copy(
                 fileId=f['id'], enforceSingleParent=True,

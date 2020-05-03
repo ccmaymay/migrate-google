@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 
+import os
+
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
 from migrate_google import LOGGER, authenticate, service_method_iter, configure_logging
-
-LOG_PATH = 'migrate-drive-1.log'
 
 
 def main():
@@ -16,16 +16,18 @@ def main():
     parser.add_argument('to_email', help='Email address of new owner')
     args = parser.parse_args()
 
-    configure_logging(LOG_PATH)
+    credentials_name = os.path.splitext(os.path.basename(args.credentials_path))[0]
+    configure_logging('migrate-drive-1-{}.log'.format(credentials_name))
 
-    creds = authenticate(args.credentials_path)
+    creds = authenticate(args.credentials_path, token_path=credentials_name + '.pickle')
     service = build('drive', 'v3', credentials=creds)
     files = service.files()
     perms = service.permissions()
 
     LOGGER.debug('Searching for files owned by {} ...'.format(args.from_email))
     file_request = files.list(
-        q="'{}' in owners".format(args.from_email), pageSize=100,
+        q="'{}' in owners and mimeType contains 'application/vnd.google-apps'".format(args.from_email),
+        pageSize=100,
         fields="nextPageToken, files(id, name)")
     for f in service_method_iter(file_request, 'files', files.list_next):
         LOGGER.info(f['name'])
@@ -53,7 +55,10 @@ def main():
                 ).execute()
 
         except HttpError as ex:
-            LOGGER.warning('Caught exception: {}'.format(ex))
+            if ex.resp.status == 403:
+                LOGGER.warning('Caught exception: {}'.format(ex))
+            else:
+                raise ex
 
 
 if __name__ == '__main__':
