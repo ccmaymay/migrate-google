@@ -55,10 +55,7 @@ def main():
                 ).execute()
 
         except HttpError as ex:
-            if ex.resp.status == 403:
-                LOGGER.warning('Caught exception: {}'.format(ex))
-            else:
-                raise ex
+            LOGGER.warning('Caught exception: {}'.format(ex))
 
 
 if __name__ == '__main__':
