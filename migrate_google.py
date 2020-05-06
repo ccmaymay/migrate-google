@@ -82,3 +82,13 @@ class FileCache(object):
 
     def is_owned(self, file_id):
         return self.get(file_id)['owned']
+
+
+def remove_user_permissions(perms, file_id, email_address):
+    perm_request = perms.list(
+        fileId=file_id, pageSize=10,
+        fields="nextPageToken, permissions(id, type, emailAddress)")
+    for p in service_method_iter(perm_request, 'permissions', perms.list_next):
+        if p['type'] == 'user' and p['emailAddress'] == email_address:
+            LOGGER.debug('Removing permission for {}'.format(email_address))
+            perms.delete(fileId=file_id, permissionId=p['id']).execute()
