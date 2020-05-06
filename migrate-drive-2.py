@@ -3,6 +3,7 @@
 import os
 
 from googleapiclient.discovery import build
+from googleapiclient.errors import HttpError
 
 from migrate_google import LOGGER, authenticate, service_method_iter, configure_logging, FileCache
 
@@ -31,21 +32,25 @@ def main():
         fields="nextPageToken, files(id, name, starred, owners, parents)")
     for f in service_method_iter(file_request, 'files', files.list_next):
         LOGGER.info(f['name'])
-        if not all(parents_cache.is_owned(parent_id) for parent_id in f.get('parents', [])):
-            LOGGER.warning('Skipping file in folder owned by someone else')
-        else:
-            copy_response = files.copy(
-                fileId=f['id'], enforceSingleParent=True,
-                fields='id',
-                body=dict((k, f[k]) for k in ('name', 'starred'))).execute()
-            LOGGER.debug('Copied file id: {}; deleting {}'.format(copy_response['id'], f['id']))
-            perm_request = perms.list(
-                fileId=f['id'], pageSize=10,
-                fields="nextPageToken, permissions(id, type, emailAddress)")
-            for p in service_method_iter(perm_request, 'permissions', perms.list_next):
-                if p['type'] == 'user' and p['emailAddress'] == args.to_email:
-                    LOGGER.debug('Removing permission for {}'.format(args.to_email))
-                    perms.delete(fileId=f['id'], permissionId=p['id']).execute()
+        try:
+            if not all(parents_cache.is_owned(parent_id) for parent_id in f.get('parents', [])):
+                LOGGER.warning('Skipping file in folder owned by someone else')
+            else:
+                copy_response = files.copy(
+                    fileId=f['id'], enforceSingleParent=True,
+                    fields='id',
+                    body=dict((k, f[k]) for k in ('name', 'starred'))).execute()
+                LOGGER.debug('Copied file id: {}; deleting {}'.format(copy_response['id'], f['id']))
+                perm_request = perms.list(
+                    fileId=f['id'], pageSize=10,
+                    fields="nextPageToken, permissions(id, type, emailAddress)")
+                for p in service_method_iter(perm_request, 'permissions', perms.list_next):
+                    if p['type'] == 'user' and p['emailAddress'] == args.to_email:
+                        LOGGER.debug('Removing permission for {}'.format(args.to_email))
+                        perms.delete(fileId=f['id'], permissionId=p['id']).execute()
+
+        except HttpError as ex:
+            LOGGER.warning('Caught exception: {}'.format(ex))
 
 
 if __name__ == '__main__':
