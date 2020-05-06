@@ -13,14 +13,14 @@ from migrate_google import (
 
 def main():
     from argparse import ArgumentParser
-    parser = ArgumentParser(description='Remove old email from files owned by new email')
+    parser = ArgumentParser(description='Copy files shared from an address and remove shared versions')
     parser.add_argument('credentials_path', help='Path to credentials json file')
-    parser.add_argument('from_email', help='Email address to remove from shared files')
-    parser.add_argument('to_email', help='Email address owning files to be updated')
+    parser.add_argument('from_email', help='Email address whose shared files will be copied')
+    parser.add_argument('to_email', help='Email address to which files will be copied')
     args = parser.parse_args()
 
     credentials_name = os.path.splitext(os.path.basename(args.credentials_path))[0]
-    configure_logging('migrate-drive-2-{}.log'.format(credentials_name))
+    configure_logging('migrate-drive-3-{}.log'.format(credentials_name))
 
     creds = authenticate(args.credentials_path, token_path=credentials_name + '.pickle')
     service = build('drive', 'v3', credentials=creds)
@@ -28,19 +28,24 @@ def main():
     perms = service.permissions()
     parents_cache = FileCache(files)
 
-    LOGGER.debug('Searching for files owned by {} and shared with {} ...'.format(
-        args.to_email, args.from_email))
+    LOGGER.debug('Searching for files owned by {} ...'.format(args.from_email))
     file_request = files.list(
-        q="'{}' in owners and '{}' in readers".format(args.to_email, args.from_email),
+        q="'{}' in owners and not mimeType contains 'application/vnd.google-apps'".format(args.from_email),
         pageSize=100,
-        fields="nextPageToken, files(id, name)")
+        fields="nextPageToken, files(id, name, starred, owners, parents)")
     for f in service_method_iter(file_request, 'files', files.list_next):
         try:
             if not all(parents_cache.is_owned(parent_id) for parent_id in f.get('parents', [])):
                 LOGGER.warning('Skipping {} in folder owned by someone else'.format(f['name']))
             else:
-                LOGGER.info('Removing {} from owned file {}'.format(args.from_email, f['name']))
-                remove_user_permissions(perms, f['id'], args.from_email)
+                LOGGER.info('Copying {} and removing {}'.format(f['name'], args.from_email))
+                copy_response = files.copy(
+                    fileId=f['id'], enforceSingleParent=True,
+                    fields='id',
+                    body=dict((k, f[k]) for k in ('name', 'starred'))).execute()
+                remove_user_permissions(perms, copy_response['id'], args.from_email)
+                LOGGER.debug('Copied file id: {}; deleting {}'.format(copy_response['id'], f['id']))
+                remove_user_permissions(perms, f['id'], args.to_email)
 
         except HttpError as ex:
             LOGGER.warning('Caught exception: {}'.format(ex))
