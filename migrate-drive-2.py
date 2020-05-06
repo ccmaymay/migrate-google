@@ -35,11 +35,11 @@ def main():
         pageSize=100,
         fields="nextPageToken, files(id, name)")
     for f in service_method_iter(file_request, 'files', files.list_next):
-        LOGGER.info('Removing {} from owned file {}'.format(args.from_email, f['name']))
         try:
             if not all(parents_cache.is_owned(parent_id) for parent_id in f.get('parents', [])):
-                LOGGER.warning('Skipping file in folder owned by someone else')
+                LOGGER.warning('Skipping {} in folder owned by someone else'.format(f['name']))
             else:
+                LOGGER.info('Removing {} from owned file {}'.format(args.from_email, f['name']))
                 remove_user_permissions(perms, f['id'], args.from_email)
 
         except HttpError as ex:
@@ -51,11 +51,11 @@ def main():
         pageSize=100,
         fields="nextPageToken, files(id, name, starred, owners, parents)")
     for f in service_method_iter(file_request, 'files', files.list_next):
-        LOGGER.info('Copying {} and removing {}'.format(f['name'], args.from_email))
         try:
             if not all(parents_cache.is_owned(parent_id) for parent_id in f.get('parents', [])):
-                LOGGER.warning('Skipping file in folder owned by someone else')
+                LOGGER.warning('Skipping {} in folder owned by someone else'.format(f['name']))
             else:
+                LOGGER.info('Copying {} and removing {}'.format(f['name'], args.from_email))
                 copy_response = files.copy(
                     fileId=f['id'], enforceSingleParent=True,
                     fields='id',
