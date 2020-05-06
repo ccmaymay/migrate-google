@@ -31,9 +31,7 @@ def main():
     LOGGER.debug('Searching for files owned by {} and shared with {} ...'.format(
         args.to_email, args.from_email))
     file_request = files.list(
-        q="'{}' in owners and '{}' in readers and "
-          "not mimeType contains 'application/vnd.google-apps'".format(
-            args.to_email, args.from_email),
+        q="'{}' in owners and '{}' in readers".format(args.to_email, args.from_email),
         pageSize=100,
         fields="nextPageToken, files(id, name)")
     for f in service_method_iter(file_request, 'files', files.list_next):
