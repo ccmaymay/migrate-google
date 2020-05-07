@@ -59,11 +59,12 @@ def authenticate(credentials_path, scopes=SCOPES, token_path=TOKEN_PATH):
     return creds
 
 
-def configure_logging(log_path):
+def configure_logging(log_path=None):
     logging.getLogger().setLevel(logging.ERROR)
     LOGGER.setLevel(logging.DEBUG)
     add_handler(LOGGER, logging.StreamHandler(), level=logging.INFO)
-    add_handler(LOGGER, logging.FileHandler(log_path, encoding='utf-8'), level=logging.DEBUG)
+    if log_path is not None:
+        add_handler(LOGGER, logging.FileHandler(log_path, encoding='utf-8'), level=logging.DEBUG)
 
 
 class FileCache(object):
