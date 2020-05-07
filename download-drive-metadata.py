@@ -2,6 +2,7 @@
 
 import os
 import json
+import time
 
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
@@ -14,6 +15,8 @@ def main():
     parser = ArgumentParser(description='Download and save metadata from drive files')
     parser.add_argument('credentials_path', help='Path to credentials json file')
     parser.add_argument('output_path', help='Path to output jsonl file')
+    parser.add_argument('--sleep', type=float,
+                        help='Amount of time to sleep between files')
     args = parser.parse_args()
 
     credentials_name = os.path.splitext(os.path.basename(args.credentials_path))[0]
@@ -49,6 +52,9 @@ def main():
                 metadata['error'] = True
 
             output_file.write(json.dumps(metadata) + '\n')
+
+            if args.sleep:
+                time.sleep(args.sleep)
 
 
 if __name__ == '__main__':
