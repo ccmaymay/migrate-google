@@ -30,7 +30,7 @@ def main():
         pageSize=100,
         fields="nextPageToken, files(id, name)")
     for f in service_method_iter(file_request, 'files', files.list_next):
-        LOGGER.info(f['name'])
+        LOGGER.info('Changing owner of {} to {}'.format(f['name'], args.to_email))
         try:
             perm_request = perms.list(
                 fileId=f['id'], pageSize=10,
