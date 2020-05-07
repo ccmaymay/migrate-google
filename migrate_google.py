@@ -71,17 +71,15 @@ class FileCache(object):
         self.files = files
         self.file_id_map = {}
 
-    def get(self, file_id):
+    def _get(self, file_id):
         if file_id not in self.file_id_map:
             file_response = self.files.get(fileId=file_id, fields="owners").execute()
-            self.file_id_map[file_id] = {
-                'owned': any(owner['me'] for owner in file_response['owners']),
-            }
+            self.file_id_map[file_id] = any(owner['me'] for owner in file_response['owners'])
 
         return self.file_id_map[file_id]
 
     def is_owned(self, file_id):
-        return self.get(file_id)['owned']
+        return self._get(file_id)
 
 
 def remove_user_permissions(perms, file_id, email_address):
