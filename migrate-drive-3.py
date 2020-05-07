@@ -33,7 +33,7 @@ def main():
         q="'{}' in owners and not mimeType contains 'application/vnd.google-apps'".format(args.from_email),
         pageSize=100,
         fields="nextPageToken, files(id, name, starred, owners, parents)")
-    for f in service_method_iter(file_request, 'files', files.list_next):
+    for (f, _) in service_method_iter(file_request, 'files', files.list_next):
         try:
             if not all(parents_cache.is_owned(parent_id) for parent_id in f.get('parents', [])):
                 LOGGER.warning('Skipping {} in folder owned by someone else'.format(f['name']))

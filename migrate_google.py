@@ -18,8 +18,14 @@ SCOPES = ('https://www.googleapis.com/auth/drive',)
 def service_method_iter(request, response_key, service_method_next):
     while request is not None:
         response = request.execute()
-        for item in response.get(response_key, []):
-            yield item
+        items = response.get(response_key, [])
+        for (i, item) in enumerate(items):
+            yield (
+                item,
+                dict(next_page_token=response.get('nextPageToken'),
+                     item_index=i,
+                     num_items=len(items)),
+            )
         request = service_method_next(request, response)
 
 
@@ -87,7 +93,7 @@ def remove_user_permissions(perms, file_id, email_address):
     perm_request = perms.list(
         fileId=file_id, pageSize=10,
         fields="nextPageToken, permissions(id, type, emailAddress)")
-    for p in service_method_iter(perm_request, 'permissions', perms.list_next):
+    for (p, _) in service_method_iter(perm_request, 'permissions', perms.list_next):
         if p['type'] == 'user' and p['emailAddress'] == email_address:
             LOGGER.debug('Removing permission for {}'.format(email_address))
             perms.delete(fileId=file_id, permissionId=p['id']).execute()

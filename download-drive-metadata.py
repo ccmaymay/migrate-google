@@ -31,16 +31,17 @@ def main():
         file_request = files.list(
             pageSize=100,
             fields="nextPageToken, files({})".format(', '.join(file_fields)))
-        for f in service_method_iter(file_request, 'files', files.list_next):
+        for (f, batch_info) in service_method_iter(file_request, 'files', files.list_next):
             LOGGER.info('Downloading metadata for {}'.format(f['name']))
             metadata = dict((k, f.get(k)) for k in file_fields)
             metadata['permissions'] = []
             metadata['error'] = False
+            metadata['batch_info'] = batch_info
             try:
                 perm_request = perms.list(
                     fileId=f['id'], pageSize=10,
                     fields="nextPageToken, permissions({})".format(', '.join(perm_fields)))
-                for p in service_method_iter(perm_request, 'permissions', perms.list_next):
+                for (p, _) in service_method_iter(perm_request, 'permissions', perms.list_next):
                     metadata['permissions'].append(dict((k, p.get(k)) for k in perm_fields))
 
             except HttpError as ex:

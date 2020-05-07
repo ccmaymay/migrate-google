@@ -29,13 +29,13 @@ def main():
         q="'{}' in owners and mimeType contains 'application/vnd.google-apps'".format(args.from_email),
         pageSize=100,
         fields="nextPageToken, files(id, name)")
-    for f in service_method_iter(file_request, 'files', files.list_next):
+    for (f, _1) in service_method_iter(file_request, 'files', files.list_next):
         LOGGER.info('Changing owner of {} to {}'.format(f['name'], args.to_email))
         try:
             perm_request = perms.list(
                 fileId=f['id'], pageSize=10,
                 fields="nextPageToken, permissions(id, type, emailAddress)")
-            for p in service_method_iter(perm_request, 'permissions', perms.list_next):
+            for (p, _2) in service_method_iter(perm_request, 'permissions', perms.list_next):
                 if p['type'] == 'user' and p['emailAddress'] == args.to_email:
                     LOGGER.debug('Updating permission to owner for {}'.format(args.to_email))
                     perms.update(
