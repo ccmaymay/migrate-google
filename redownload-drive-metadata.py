@@ -65,14 +65,15 @@ def main():
                 raise Exception('Previous pagination stopped in middle of batch and '
                                 'we have no page token')
 
-            LOGGER.info('Continuing pagination')
-            for metadata in downloader.list(page_token=page_token):
-                if skip > 0:
-                    skip -= 1
-                else:
-                    output_file.write(json.dumps(metadata) + '\n')
-                    if args.sleep:
-                        time.sleep(args.sleep)
+            if page_token is not None:
+                LOGGER.info('Continuing pagination')
+                for metadata in downloader.list(page_token=page_token):
+                    if skip > 0:
+                        skip -= 1
+                    else:
+                        output_file.write(json.dumps(metadata) + '\n')
+                        if args.sleep:
+                            time.sleep(args.sleep)
 
 
 if __name__ == '__main__':
