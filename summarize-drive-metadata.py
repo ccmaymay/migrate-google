@@ -80,6 +80,12 @@ def main():
         if not file_metadata.get('parents'):
             add_hierarchical_info(file_id, file_metadata_map)
 
+    LOGGER.info('Checking for non-folders with no parents')
+    for (file_id, file_metadata) in file_metadata_map.items():
+        if not file_metadata['parents'] and file_metadata.get('mimeType') != 'application/vnd.google-apps.folder':
+            LOGGER.warning('No parents: {}'.format(
+                file_metadata_map[file_id]['path']))
+
     LOGGER.info('Checking for multiple parents')
     for (file_id, file_metadata) in file_metadata_map.items():
         parents = file_metadata['parents']
