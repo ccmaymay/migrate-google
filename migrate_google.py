@@ -4,6 +4,7 @@ import logging
 import pickle
 import os
 
+from googleapiclient.errors import HttpError
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
 
@@ -97,3 +98,43 @@ def remove_user_permissions(perms, file_id, email_address):
         if p['type'] == 'user' and p['emailAddress'] == email_address:
             LOGGER.debug('Removing permission for {}'.format(email_address))
             perms.delete(fileId=file_id, permissionId=p['id']).execute()
+
+
+class FileMetadataDownloader(object):
+    DEFAULT_FILE_FIELDS = ('id', 'name', 'parents', 'size', 'mimeType', 'trashed')
+    DEFAULT_PERM_FIELDS = ('id', 'type', 'role', 'emailAddress')
+
+    def __init__(self, files, perms, file_fields=DEFAULT_FILE_FIELDS,
+                 perm_fields=DEFAULT_PERM_FIELDS):
+        self.files = files
+        self.perms = perms
+        self.file_fields = file_fields
+        self.perm_fields = perm_fields
+
+    def list(self, page_token=None):
+        LOGGER.debug('Listing files ...')
+        file_request = self.files.list(
+            pageToken=page_token,
+            pageSize=100,
+            fields="nextPageToken, files({})".format(', '.join(self.file_fields)))
+        for (f, batch_info) in service_method_iter(file_request, 'files', self.files.list_next):
+            LOGGER.info('Downloading metadata for {}'.format(f['name']))
+            yield self.get(f, batch_info)
+
+    def get(self, f, batch_info):
+        metadata = dict((k, f.get(k)) for k in self.file_fields)
+        metadata['permissions'] = []
+        metadata['error'] = False
+        metadata['batch_info'] = batch_info
+        try:
+            perm_request = self.perms.list(
+                fileId=f['id'], pageSize=10,
+                fields="nextPageToken, permissions({})".format(', '.join(self.perm_fields)))
+            for (p, _) in service_method_iter(perm_request, 'permissions', self.perms.list_next):
+                metadata['permissions'].append(dict((k, p.get(k)) for k in self.perm_fields))
+
+        except HttpError as ex:
+            LOGGER.warning('Caught exception: {}'.format(ex))
+            metadata['error'] = True
+
+        return metadata
