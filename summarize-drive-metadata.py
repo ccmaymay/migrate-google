@@ -11,8 +11,6 @@ from googleapiclient.errors import HttpError
 
 from migrate_google import LOGGER, authenticate, configure_logging
 
-MISSING_ENTRY_NAME = '[???????]'
-
 
 def add_hierarchical_info(root_id, file_metadata_map):
     top_down_stack = [root_id]
@@ -20,9 +18,6 @@ def add_hierarchical_info(root_id, file_metadata_map):
     while top_down_stack:
         file_id = top_down_stack.pop()
         file_metadata = file_metadata_map[file_id]
-
-        if 'name' not in file_metadata:
-            file_metadata['name'] = MISSING_ENTRY_NAME
 
         if not file_metadata.get('parents'):
             file_metadata['parents'] = []
@@ -32,7 +27,10 @@ def add_hierarchical_info(root_id, file_metadata_map):
         else:
             file_metadata['size'] = 0
 
-        path = file_metadata['name']
+        if file_metadata.get('name') is None:
+            path = '[id={}]'.format(file_id)
+        else:
+            path = file_metadata['name']
         parents = file_metadata['parents']
         if parents:
             path = '{}/{}'.format(file_metadata_map[parents[0]]['path'], path)
@@ -78,8 +76,8 @@ def main():
             file_id = file_metadata['id']
 
             if file_metadata['error']:
-                LOGGER.warning('Error downloading metadata for {}'.format(
-                    file_metadata['name']))
+                LOGGER.warning('Error downloading metadata for {} ({})'.format(
+                    file_metadata.get('name'), file_metadata['id']))
 
             if file_id not in file_metadata_map:
                 file_metadata_map[file_id] = dict(children=[])
@@ -95,40 +93,46 @@ def main():
     for (file_id, file_metadata) in file_metadata_map.items():
         if not file_metadata.get('parents'):
             add_hierarchical_info(file_id, file_metadata_map)
+            LOGGER.info('Added info to root dir: {}'.format(file_metadata['path']))
+
+    LOGGER.info('Checking for files with no names')
+    for (file_id, file_metadata) in file_metadata_map.items():
+        if file_metadata.get('name') is None:
+            LOGGER.warning('No name: {} ({})'.format(
+                file_metadata['path'], file_id))
 
     LOGGER.info('Checking for non-folders with no parents')
     for (file_id, file_metadata) in file_metadata_map.items():
         if not file_metadata['parents'] and file_metadata.get('mimeType') != 'application/vnd.google-apps.folder':
-            LOGGER.warning('No parents: {}'.format(
-                file_metadata_map[file_id]['path']))
+            LOGGER.warning('No parents: {} ({}; {})'.format(
+                file_metadata['path'], file_id, file_metadata.get('mimeType')))
 
     LOGGER.info('Checking for multiple parents')
     for (file_id, file_metadata) in file_metadata_map.items():
         parents = file_metadata['parents']
         if len(parents) > 1:
             LOGGER.warning('{} parents: {}'.format(
-                len(parents), file_metadata_map[file_id]['path']))
+                len(parents), file_metadata['path']))
 
     LOGGER.info('Checking for duplicate entries')
     file_counts = defaultdict(set)
-    for (file_id, m) in file_metadata_map.items():
+    for (file_id, file_metadata) in file_metadata_map.items():
         file_counts[(
-            m['name'],
-            m['path'],
-            tuple(sorted(m['parents'])),
-            m['size'],
+            file_metadata['path'],
+            tuple(sorted(file_metadata['parents'])),
+            file_metadata['size'],
             tuple(sorted(
                 (
                     p['type'],
                     p.get('role'),
                     p.get('emailAddress'),
-                ) for p in m.get('permissions', [])
+                ) for p in file_metadata.get('permissions', [])
             )),
         )].add(file_id)
     for (t, file_ids) in file_counts.items():
-        if len(file_ids) > 1 and t[0] != MISSING_ENTRY_NAME and ('user', 'owner', args.email) in t[-1]:
+        if len(file_ids) > 1 and ('user', 'owner', args.email) in t[-1]:
             LOGGER.warning('{} copies of entry: {}'.format(
-                len(file_ids), t[1]))
+                len(file_ids), t[0]))
             if args.delete_duplicates:
                 try:
                     retrieved_file_ids = [
@@ -136,7 +140,7 @@ def main():
                     if sorted(retrieved_file_ids) == sorted(file_ids):
                         for file_id in retrieved_file_ids[1:]:
                             LOGGER.warning('Deleting {}'.format(file_id))
-                            files.delete(fileId=file_id)
+                            files.delete(fileId=file_id).execute()
                 except HttpError as ex:
                     LOGGER.warning('Caught exception: {}'.format(ex))
 
