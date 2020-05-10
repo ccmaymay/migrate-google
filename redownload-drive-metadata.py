@@ -4,6 +4,7 @@ import os
 import json
 import time
 
+from googleapiclient.errors import HttpError
 from googleapiclient.discovery import build
 
 from migrate_google import LOGGER, authenticate, configure_logging, FileMetadataDownloader
@@ -46,12 +47,20 @@ def main():
 
             if metadata['error']:
                 LOGGER.info('Redownloading metadata for {}'.format(metadata['name']))
-                f = files.get(
-                    fileId=metadata['id'],
-                    fields=', '.join(FileMetadataDownloader.DEFAULT_FILE_FIELDS)).execute()
-                metadata = downloader.get(f, metadata['batch_info'])
-                if args.sleep:
-                    time.sleep(args.sleep)
+                try:
+                    f = files.get(
+                        fileId=metadata['id'],
+                        fields=', '.join(FileMetadataDownloader.DEFAULT_FILE_FIELDS)).execute()
+                except HttpError as ex:
+                    if ex.resp.status == 404:
+                        LOGGER.warning('Skipping file, caught 404: {}'.format(ex))
+                        continue
+                    else:
+                        raise ex
+                else:
+                    metadata = downloader.get(f, metadata['batch_info'])
+                    if args.sleep:
+                        time.sleep(args.sleep)
 
             output_file.write(json.dumps(metadata) + '\n')
 

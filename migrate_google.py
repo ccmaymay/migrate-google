@@ -124,7 +124,7 @@ class FileMetadataDownloader(object):
     def get(self, f, batch_info):
         metadata = dict((k, f.get(k)) for k in self.file_fields)
         metadata['permissions'] = []
-        metadata['error'] = False
+        metadata['error'] = None
         metadata['batch_info'] = batch_info
         try:
             perm_request = self.perms.list(
@@ -135,6 +135,6 @@ class FileMetadataDownloader(object):
 
         except HttpError as ex:
             LOGGER.warning('Caught exception: {}'.format(ex))
-            metadata['error'] = True
+            metadata['error'] = ex.resp.status
 
         return metadata
