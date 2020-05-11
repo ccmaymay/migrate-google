@@ -69,9 +69,9 @@ def main():
         checksum_counts[df.md5_checksum].append(df.path)
     for (cs, paths) in checksum_counts.items():
         if len(paths) > 1:
-            LOGGER.warning('{} copies of content: {}'.format(len(paths), paths[0]))
+            LOGGER.warning('{} copies of content here and elsewhere: {}'.format(len(paths), paths[0]))
 
-    LOGGER.info('Checking for duplicate metadata')
+    LOGGER.info('Checking for duplicate content and metadata')
     metadata_counts = defaultdict(list)
     for df in drive_files.list():
         metadata_counts[(
