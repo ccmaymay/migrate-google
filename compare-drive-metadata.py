@@ -23,7 +23,7 @@ def main():
 
     metadata_map = dict()
     for version in ('old', 'new'):
-        for df in drive_files['version'].list():
+        for df in drive_files[version].list():
             key = (df.name, df.size, df.md5_checksum)
             if key not in metadata_map:
                 metadata_map[key] = dict(old=[], new=[])
