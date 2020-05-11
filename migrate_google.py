@@ -3,6 +3,7 @@
 import logging
 import pickle
 import os
+from humanfriendly import format_size
 
 from googleapiclient.errors import HttpError
 from google_auth_oauthlib.flow import InstalledAppFlow
@@ -101,7 +102,7 @@ def remove_user_permissions(perms, file_id, email_address):
 
 
 class FileMetadataDownloader(object):
-    DEFAULT_FILE_FIELDS = ('id', 'name', 'parents', 'size', 'mimeType', 'trashed')
+    DEFAULT_FILE_FIELDS = ('id', 'name', 'parents', 'size', 'mimeType', 'trashed', 'md5Checksum')
     DEFAULT_PERM_FIELDS = ('id', 'type', 'role', 'emailAddress')
 
     def __init__(self, files, perms, file_fields=DEFAULT_FILE_FIELDS,
@@ -138,3 +139,123 @@ class FileMetadataDownloader(object):
             metadata['error'] = ex.resp.status
 
         return metadata
+
+
+class DriveFile(object):
+    def __init__(self, metadata, drive_files):
+        self.metadata = dict()
+        self.drive_files = drive_files
+
+        self.children = []
+        self.size = 0
+        self.path = None
+
+        self.update(metadata)
+
+    @property
+    def id(self):
+        return self.metadata['id']
+
+    @property
+    def error(self):
+        return self.metadata.get('error')
+
+    @property
+    def mime_type(self):
+        return self.metadata.get('mimeType')
+
+    @property
+    def md5_checksum(self):
+        return self.metadata.get('md5Checksum')
+
+    @property
+    def trashed(self):
+        return self.metadata.get('trashed')
+
+    @property
+    def permissions(self):
+        if self.metadata.get('permissions'):
+            return self.metadata['permissions']
+        else:
+            return []
+
+    @property
+    def human_friendly_size(self):
+        return format_size(self.size)
+
+    @property
+    def name(self):
+        if self.metadata.get('name') is not None:
+            return self.metadata['name']
+        else:
+            return '[id={}]'.format(self.metadata['id'])
+
+    @property
+    def parent_ids(self):
+        if self.metadata.get('parents') is not None:
+            return self.metadata['parents']
+        else:
+            return []
+
+    @property
+    def parents(self):
+        return [self.drive_files.get(parent_id) for parent_id in self.parent_ids]
+
+    def add(self, child):
+        self.children.append(child)
+        self.update_size(child.size)
+
+    def update_size(self, diff):
+        self.size += diff
+
+        for parent in self.parents:
+            parent.update_size(diff)
+
+    def update_path(self):
+        parents = self.parents
+        if len(parents) == 0:
+            self.path = self.name
+        elif len(parents) == 1:
+            self.path = '{}/{}'.format(parents[0].path, self.name)
+        else:
+            self.path = '{{{}}}/{}'.format(','.join(p.path for p in parents), self.name)
+
+        for child in self.children:
+            child.update_path()
+
+    def update(self, metadata):
+        new_size = (0 if metadata.get('size') is None else int(metadata['size']))
+        old_size = (0 if self.metadata.get('size') is None else int(self.metadata['size']))
+
+        self.metadata.update(metadata)
+        self.update_size(new_size - old_size)
+        self.update_path()
+
+    def __str__(self):
+        return '{} ({})'.format(self.id, self.path)
+
+
+class DriveFiles(object):
+    def __init__(self):
+        self.file_map = dict()
+        self.root_ids = set()
+
+    def add(self, metadata):
+        f = self.get(metadata['id'])
+        f.update(metadata)
+
+        for p in f.parents:
+            p.add(f)
+            if f.id in self.root_ids:
+                self.root_ids.remove(f.id)
+
+        return f
+
+    def get(self, file_id):
+        if file_id not in self.file_map:
+            self.file_map[file_id] = DriveFile(dict(id=file_id), self)
+            self.root_ids.add(file_id)
+        return self.file_map[file_id]
+
+    def list(self):
+        return self.file_map.values()

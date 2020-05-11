@@ -3,48 +3,12 @@
 import os
 import json
 import time
-from humanfriendly import format_size
 from collections import defaultdict
 
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
-from migrate_google import LOGGER, authenticate, configure_logging
-
-
-def add_hierarchical_info(root_id, file_metadata_map):
-    top_down_stack = [root_id]
-    bottom_up_stack = []
-    while top_down_stack:
-        file_id = top_down_stack.pop()
-        file_metadata = file_metadata_map[file_id]
-
-        if not file_metadata.get('parents'):
-            file_metadata['parents'] = []
-
-        if file_metadata.get('size'):
-            file_metadata['size'] = int(file_metadata['size'])
-        else:
-            file_metadata['size'] = 0
-
-        if file_metadata.get('name') is None:
-            path = '[id={}]'.format(file_id)
-        else:
-            path = file_metadata['name']
-        parents = file_metadata['parents']
-        if parents:
-            path = '{}/{}'.format(file_metadata_map[parents[0]]['path'], path)
-        file_metadata['path'] = path
-
-        bottom_up_stack.append(file_id)
-
-        for child_id in file_metadata['children']:
-            top_down_stack.append(child_id)
-
-    while bottom_up_stack:
-        file_metadata = file_metadata_map[bottom_up_stack.pop()]
-        for child_id in file_metadata['children']:
-            file_metadata['size'] += file_metadata_map[child_id]['size']
+from migrate_google import LOGGER, authenticate, configure_logging, DriveFiles
 
 
 def main():
@@ -57,8 +21,8 @@ def main():
                         help='Number of top (largest) files to show')
     parser.add_argument('--sleep', type=float,
                         help='Amount of time to sleep between modifying files')
-    parser.add_argument('--delete-duplicates', action='store_true',
-                        help='Delete all but one copy of each file this email address owns')
+    parser.add_argument('--delete-duplicate-metadata', action='store_true',
+                        help='Delete all but one copy of each file sharing the same metadata')
     args = parser.parse_args()
 
     credentials_name = os.path.splitext(os.path.basename(args.credentials_path))[0]
@@ -69,71 +33,63 @@ def main():
     files = service.files()
 
     LOGGER.info('Loading data from {}'.format(args.input_path))
-    file_metadata_map = dict()
+    drive_files = DriveFiles()
     with open(args.input_path) as f:
         for line in f:
-            file_metadata = json.loads(line)
-            file_id = file_metadata['id']
+            df = drive_files.add(json.loads(line))
+            if df.error:
+                LOGGER.warning('Error downloading metadata for {}'.format(df))
 
-            if file_metadata['error']:
-                LOGGER.warning('Error downloading metadata for {} ({})'.format(
-                    file_metadata.get('name'), file_metadata['id']))
-
-            if file_id not in file_metadata_map:
-                file_metadata_map[file_id] = dict(children=[])
-            file_metadata_map[file_id].update(file_metadata)
-
-            if file_metadata.get('parents'):
-                for p in file_metadata['parents']:
-                    if p not in file_metadata_map:
-                        file_metadata_map[p] = dict(children=[])
-                    file_metadata_map[p]['children'].append(file_id)
-
-    LOGGER.info('Computing hierarchical info for each root dir')
-    for (file_id, file_metadata) in file_metadata_map.items():
-        if not file_metadata.get('parents'):
-            add_hierarchical_info(file_id, file_metadata_map)
-            LOGGER.info('Added info to root dir: {}'.format(file_metadata['path']))
+    LOGGER.info('Checking for trashed files')
+    for df in drive_files.list():
+        if df.trashed:
+            LOGGER.warning('Trashed: {}'.format(df))
 
     LOGGER.info('Checking for files with no names')
-    for (file_id, file_metadata) in file_metadata_map.items():
-        if file_metadata.get('name') is None:
-            LOGGER.warning('No name: {} ({})'.format(
-                file_metadata['path'], file_id))
+    for df in drive_files.list():
+        if df.metadata.get('name') is None:
+            LOGGER.warning('No name: {}'.format(df))
 
-    LOGGER.info('Checking for non-folders with no parents')
-    for (file_id, file_metadata) in file_metadata_map.items():
-        if not file_metadata['parents'] and file_metadata.get('mimeType') != 'application/vnd.google-apps.folder':
-            LOGGER.warning('No parents: {} ({}; {})'.format(
-                file_metadata['path'], file_id, file_metadata.get('mimeType')))
+    LOGGER.info('Checking for top-level entries beyond root')
+    root_id = files.get(fileId='root').execute()['id']
+    LOGGER.info('Root id: {}'.format(root_id))
+    for df in drive_files.list():
+        if df.id != root_id and not df.parents:
+            LOGGER.warning('Top-level but not root: {}'.format(df))
 
     LOGGER.info('Checking for multiple parents')
-    for (file_id, file_metadata) in file_metadata_map.items():
-        parents = file_metadata['parents']
+    for df in drive_files.list():
+        parents = df.parents
         if len(parents) > 1:
-            LOGGER.warning('{} parents: {}'.format(
-                len(parents), file_metadata['path']))
+            LOGGER.warning('{} parents: {}'.format(len(parents), df))
 
-    LOGGER.info('Checking for duplicate entries')
-    file_counts = defaultdict(set)
-    for (file_id, file_metadata) in file_metadata_map.items():
-        file_counts[(
-            file_metadata['path'],
-            tuple(sorted(file_metadata['parents'])),
-            file_metadata['size'],
+    LOGGER.info('Checking for duplicate content')
+    checksum_counts = defaultdict(list)
+    for df in drive_files.list():
+        checksum_counts[df.md5_checksum].append(df.path)
+    for (cs, paths) in checksum_counts.items():
+        if len(paths) > 1:
+            LOGGER.warning('{} copies of content: {}'.format(len(paths), paths[0]))
+
+    LOGGER.info('Checking for duplicate metadata')
+    metadata_counts = defaultdict(list)
+    for df in drive_files.list():
+        metadata_counts[(
+            df.path,
+            tuple(sorted(df.parent_ids)),
+            df.size,
             tuple(sorted(
                 (
                     p['type'],
                     p.get('role'),
                     p.get('emailAddress'),
-                ) for p in file_metadata.get('permissions', [])
+                ) for p in df.permissions
             )),
-        )].add(file_id)
-    for (t, file_ids) in file_counts.items():
-        if len(file_ids) > 1 and ('user', 'owner', args.email) in t[-1]:
-            LOGGER.warning('{} copies of entry: {}'.format(
-                len(file_ids), t[0]))
-            if args.delete_duplicates:
+        )].append(df.id)
+    for (md, file_ids) in metadata_counts.items():
+        if len(file_ids) > 1 and ('user', 'owner', args.email) in md[-1]:
+            LOGGER.warning('{} copies of path: {}'.format(len(file_ids), md[0]))
+            if args.delete_duplicate_metadata:
                 try:
                     retrieved_file_ids = [
                         files.get(fileId=file_id).execute()['id'] for file_id in file_ids]
@@ -147,12 +103,9 @@ def main():
                 time.sleep(args.sleep)
 
     LOGGER.info('Listing {} largest files by size'.format(args.num_top_files))
-    file_ids_by_size = sorted(
-        file_metadata_map,
-        key=lambda file_id: file_metadata_map[file_id]['size'], reverse=True)
-    for file_id in file_ids_by_size[:args.num_top_files]:
-        file_metadata = file_metadata_map[file_id]
-        LOGGER.info('{:<8} {}'.format(format_size(file_metadata['size']), file_metadata['path']))
+    files_by_size = sorted(drive_files.list(), key=lambda df: df.size, reverse=True)
+    for df in files_by_size[:args.num_top_files]:
+        LOGGER.info('{:<8} {}'.format(df.human_friendly_size, df))
 
 
 if __name__ == '__main__':
