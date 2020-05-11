@@ -47,7 +47,8 @@ def main():
             except HttpError as ex:
                 LOGGER.warning('Caught exception: {}'.format(ex))
 
-            time.sleep(args.sleep)
+            if args.sleep:
+                time.sleep(args.sleep)
 
 
 if __name__ == '__main__':
