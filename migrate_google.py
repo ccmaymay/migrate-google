@@ -203,13 +203,15 @@ class DriveFile(object):
 
     def add(self, child):
         self.children.append(child)
-        self.update_size(child.size)
+        self.update_size()
 
-    def update_size(self, diff):
-        self.size += diff
+    def update_size(self):
+        self.size = sum(child.size for child in self.children)
+        if self.metadata.get('size') is not None:
+            self.size += int(self.metadata['size'])
 
         for parent in self.parents:
-            parent.update_size(diff)
+            parent.update_size()
 
     def update_path(self):
         parents = self.parents
@@ -224,11 +226,8 @@ class DriveFile(object):
             child.update_path()
 
     def update(self, metadata):
-        new_size = (0 if metadata.get('size') is None else int(metadata['size']))
-        old_size = (0 if self.metadata.get('size') is None else int(self.metadata['size']))
-
         self.metadata.update(metadata)
-        self.update_size(new_size - old_size)
+        self.update_size()
         self.update_path()
 
     def __str__(self):
