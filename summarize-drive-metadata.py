@@ -21,8 +21,8 @@ def main():
                         help='Number of top (largest) files to show')
     parser.add_argument('--sleep', type=float,
                         help='Amount of time to sleep between modifying files')
-    parser.add_argument('--delete-duplicate-metadata', action='store_true',
-                        help='Delete all but one copy of each file sharing the same metadata')
+    parser.add_argument('--delete-duplicates', action='store_true',
+                        help='Delete all but one copy of each file')
     args = parser.parse_args()
 
     credentials_name = os.path.splitext(os.path.basename(args.credentials_path))[0]
@@ -78,6 +78,7 @@ def main():
             df.path,
             tuple(sorted(df.parent_ids)),
             df.size,
+            df.md5_checksum,
             tuple(sorted(
                 (
                     p['type'],
@@ -89,7 +90,7 @@ def main():
     for (md, file_ids) in metadata_counts.items():
         if len(file_ids) > 1 and ('user', 'owner', args.email) in md[-1]:
             LOGGER.warning('{} copies of path: {}'.format(len(file_ids), md[0]))
-            if args.delete_duplicate_metadata:
+            if args.delete_duplicates:
                 try:
                     retrieved_file_ids = [
                         files.get(fileId=file_id).execute()['id'] for file_id in file_ids]
