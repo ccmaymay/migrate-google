@@ -10,9 +10,9 @@ from migrate_google import LOGGER, authenticate, service_method_iter, configure_
 
 def main():
     from argparse import ArgumentParser
-    parser = ArgumentParser(description='Remove orphaned files')
+    parser = ArgumentParser(description='Remove unshared orphaned files')
     parser.add_argument('credentials_path', help='Path to credentials json file')
-    parser.add_argument('email', help='Email address whose owned files will be deleted')
+    parser.add_argument('email', help='Email address whose unshared files will be deleted')
     args = parser.parse_args()
 
     credentials_name = os.path.splitext(os.path.basename(args.credentials_path))[0]
