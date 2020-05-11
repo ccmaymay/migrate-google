@@ -44,10 +44,10 @@ def main():
                     LOGGER.info('Removing orphaned file {}'.format(f['name']))
                     files.delete(fileId=f['id']).execute()
 
-                time.sleep(args.sleep)
-
             except HttpError as ex:
                 LOGGER.warning('Caught exception: {}'.format(ex))
+
+            time.sleep(args.sleep)
 
 
 if __name__ == '__main__':
