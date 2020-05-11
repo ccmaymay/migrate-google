@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import os
+import time
 
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
@@ -13,6 +14,8 @@ def main():
     parser = ArgumentParser(description='Remove unshared orphaned files')
     parser.add_argument('credentials_path', help='Path to credentials json file')
     parser.add_argument('email', help='Email address whose unshared files will be deleted')
+    parser.add_argument('--sleep', type=float,
+                        help='Amount of time to sleep between modifying files')
     args = parser.parse_args()
 
     credentials_name = os.path.splitext(os.path.basename(args.credentials_path))[0]
@@ -40,6 +43,8 @@ def main():
                 else:
                     LOGGER.info('Removing orphaned file {}'.format(f['name']))
                     files.delete(fileId=f['id']).execute()
+
+                time.sleep(args.sleep)
 
             except HttpError as ex:
                 LOGGER.warning('Caught exception: {}'.format(ex))
