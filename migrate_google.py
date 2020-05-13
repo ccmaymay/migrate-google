@@ -16,6 +16,8 @@ TOKEN_PATH = 'token.pickle'
 
 SCOPES = ('https://www.googleapis.com/auth/drive',)
 
+FOLDER_MIME_TYPE = 'application/vnd.google-apps.folder'
+
 
 def service_method_iter(request, response_key, service_method_next):
     while request is not None:
@@ -29,6 +31,62 @@ def service_method_iter(request, response_key, service_method_next):
                      num_items=len(items)),
             )
         request = service_method_next(request, response)
+
+
+def get_file_by_path(path, files, fields=('id', 'name')):
+    fields = tuple(set(fields).union({'id', 'name'}))
+
+    if path.startswith('/'):
+        path = path[1:]
+    if path.endswith('/'):
+        path = path[:-1]
+
+    LOGGER.debug('Getting file at normalized path {} ...'.format(path))
+    if path:
+        parent_id = 'root'
+        f = None
+        for name in path.split('/'):
+            request = files.list(
+                q="'{}' in parents and name = '{}'".format(parent_id, name),
+                fields='nextPageToken, files({})'.format(', '.join(fields)),
+                pageSize=100)
+            parent_id = None
+            for (f, _) in service_method_iter(request, 'files', files.list_next):
+                if parent_id is None:
+                    parent_id = f['id']
+                else:
+                    LOGGER.warning('Ignoring file {} also named {}'.format(f['id'], name))
+            if parent_id is None:
+                raise Exception('No file {} found'.format(name))
+
+        if f is None:
+            raise Exception('Error getting file at {}'.format(path))
+        else:
+            return f
+
+    else:
+        return files.get(fileId='root', fields=', '.join(fields)).execute()
+
+
+def walk(path, files, fields=('id', 'name', 'mimeType')):
+    fields = tuple(set(fields).union({'id', 'name', 'mimeType'}))
+
+    stack = [get_file_by_path(path, files, fields=fields)]
+    while stack:
+        parent = stack.pop()
+        request = files.list(
+            q="'{}' in parents".format(parent['id']),
+            fields='nextPageToken, files({})'.format(', '.join(fields)),
+            pageSize=100)
+        dir_entries = []
+        file_entries = []
+        for (f, _) in service_method_iter(request, 'files', files.list_next):
+            if f.get('mimeType') == FOLDER_MIME_TYPE:
+                dir_entries.append(f)
+                stack.append(f)
+            else:
+                file_entries.append(f)
+        yield (parent, dir_entries, file_entries)
 
 
 def add_handler(logger, handler, level=logging.INFO, fmt=LOG_FORMAT):
